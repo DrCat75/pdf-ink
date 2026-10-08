@@ -1,0 +1,89 @@
+{
+  "name": "pdf-ink",
+  "displayName": "PDF Ink",
+  "description": "A Visual Studio Code PDF edit extension intended to work with touch pen displays",
+  "version": "0.2.0",
+  "publisher": "niklehmann",
+  "author": {
+    "name": "Nik Lehmann"
+  },
+  "license": "MIT",
+  "icon": "images/icon.png",
+  "galleryBanner": {
+    "color": "#1e3a6e",
+    "theme": "dark"
+  },
+  "pricing": "Free",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Visualization",
+    "Education",
+    "Other"
+  ],
+  "keywords": [
+    "pdf",
+    "annotate",
+    "annotation",
+    "handwriting",
+    "ink",
+    "pen",
+    "stylus",
+    "highlighter",
+    "notes",
+    "goodnotes"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "pdfInk.editor",
+        "displayName": "PDF Ink",
+        "selector": [
+          {
+            "filenamePattern": "*.pdf"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
+    "commands": [
+      {
+        "command": "pdfInk.open",
+        "title": "Open with PDF Ink",
+        "category": "PDF Ink"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "pdfInk.open",
+          "when": "resourceExtname == .pdf",
+          "group": "navigation"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "pdfInk.open",
+          "when": "resourceExtname == .pdf"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "package": "node build.mjs && vsce package --no-dependencies --allow-missing-repository",
+    "publish:vsce": "node build.mjs && vsce publish --no-dependencies --allow-missing-repository",
+    "publish:ovsx": "node build.mjs && vsce package --no-dependencies --allow-missing-repository && ovsx publish pdf-ink-$npm_package_version.vsix"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.28.2",
+    "ovsx": "^1.2.0",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.4.299",
+    "perfect-freehand": "^1.2.3"
+  }
+}

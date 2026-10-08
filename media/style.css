@@ -1,0 +1,49 @@
+:root {
+  --bar-bg: var(--vscode-editorWidget-background, #252526);
+  --bar-fg: var(--vscode-foreground, #ccc);
+  --bar-border: var(--vscode-widget-border, #444);
+  --active: var(--vscode-button-background, #0e639c);
+  --active-fg: var(--vscode-button-foreground, #fff);
+  --hover: var(--vscode-toolbar-hoverBackground, rgba(255,255,255,.1));
+  --canvas-bg: var(--vscode-editor-background, #1e1e1e);
+}
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--canvas-bg); color: var(--bar-fg);
+  font: 12px var(--vscode-font-family, system-ui, sans-serif); user-select: none; -webkit-user-select: none; }
+
+#toolbar { position: fixed; top: 0; left: 0; right: 0; height: 38px; z-index: 10; display: flex; align-items: center;
+  gap: 2px; padding: 0 8px; background: var(--bar-bg); border-bottom: 1px solid var(--bar-border); overflow-x: auto; }
+#toolbar .sep { width: 1px; height: 22px; background: var(--bar-border); margin: 0 6px; flex: none; }
+#toolbar .spacer { flex: 1; }
+#toolbar button { flex: none; height: 28px; min-width: 28px; padding: 0 6px; border: 0; border-radius: 4px; background: transparent;
+  color: var(--bar-fg); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px; font: inherit; }
+#toolbar button:hover { background: var(--hover); }
+#toolbar button.on { background: var(--active); color: var(--active-fg); }
+#toolbar button:disabled { opacity: .35; cursor: default; background: transparent; }
+#toolbar svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#toolbar .swatch { width: 20px; min-width: 20px; height: 20px; padding: 0; border-radius: 50%; margin: 0 2px;
+  box-shadow: inset 0 0 0 1px rgba(128,128,128,.6); }
+#toolbar .swatch.on { outline: 2px solid var(--active); outline-offset: 2px; background-clip: content-box; }
+#toolbar input[type=color] { width: 24px; height: 24px; padding: 0; border: 0; background: none; cursor: pointer; flex: none; }
+#toolbar input[type=range] { width: 80px; flex: none; }
+#toolbar .label { min-width: 34px; text-align: center; opacity: .85; flex: none; font-variant-numeric: tabular-nums; }
+#status { opacity: .7; min-width: 52px; text-align: right; flex: none; }
+#status.err { color: var(--vscode-errorForeground, #f48771); opacity: 1; }
+
+#viewer { position: absolute; top: 39px; left: 0; right: 0; bottom: 0; overflow: auto; }
+#pages { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 16px; width: max-content; min-width: 100%; box-sizing: border-box; }
+.page { position: relative; background: #fff; box-shadow: 0 1px 6px rgba(0,0,0,.45); flex: none; touch-action: none; }
+.page canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.page canvas.hl { mix-blend-mode: multiply; }
+.page .sel { position: absolute; border: 1.5px dashed var(--active); background: rgba(14,99,156,.06); pointer-events: none; box-sizing: border-box; }
+
+/* cursors (--dot, --cross: PNGs set by webview.js); the eraser draws its own circle */
+body[data-tool=pen] #viewer, body[data-tool=highlighter] #viewer { cursor: var(--dot, crosshair); }
+body[data-tool=lasso] #viewer { cursor: var(--cross, crosshair); }
+body[data-tool=eraser] .page { cursor: none; }
+body[data-gesture=pen], body[data-gesture=pen] *, body[data-gesture=highlighter], body[data-gesture=highlighter] * { cursor: var(--dot, crosshair) !important; }
+body[data-gesture=lasso], body[data-gesture=lasso] * { cursor: var(--cross, crosshair) !important; }
+body[data-gesture=eraser] .page, body[data-gesture=eraser] .page * { cursor: none !important; }
+body[data-tool=hand] .page { cursor: grab; }
+body.panning .page { cursor: grabbing; }
+
+#msg { position: absolute; top: 45%; width: 100%; text-align: center; opacity: .7; }
