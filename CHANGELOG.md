@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0
+- Table of contents: dropdown from the PDF's outline (bookmarks), collapsible, with a filter box and page numbers. Opens at the current section.
+- Find in PDF (⌘F / Ctrl+F): highlights all matches, Enter / ⇧Enter (or ⌘G / ⇧⌘G) steps through them, "Aa" toggles match case. Phrases that wrap across lines are found too.
+
 ## 0.2.1
 - Added GitHub repository and issue tracker links. Simpler README.
 

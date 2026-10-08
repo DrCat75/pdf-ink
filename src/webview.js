@@ -459,6 +459,7 @@ function events(e) {
 
 function onDown(e, P) {
   if (G) return;
+  if (document.activeElement instanceof HTMLInputElement) document.activeElement.blur(); // tool keys work again after drawing
   const isTouch = e.pointerType === 'touch';
   const wantsPan = S.prefs.tool === 'hand' || spaceHeld || e.button === 1 || (isTouch && S.prefs.penOnly);
   if (!wantsPan && e.pointerType === 'mouse' && e.button !== 0) return;
@@ -714,9 +715,11 @@ viewer.addEventListener('scroll', () => {
 
 // ---------------------------------------------------------------- keyboard
 window.addEventListener('keydown', (e) => {
-  if (e.target instanceof HTMLInputElement) return;
   const mod = e.metaKey || e.ctrlKey;
   const k = e.key.toLowerCase();
+  if (mod && k === 'f') { e.preventDefault(); openFind(); return; }
+  if ((mod && k === 'g') || e.key === 'F3') { e.preventDefault(); stepFind(e.shiftKey ? -1 : 1); return; }
+  if (e.target instanceof HTMLInputElement) return;
   if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if (mod && k === 'y') { e.preventDefault(); redo(); return; }
   if (mod && k === 's') { e.preventDefault(); if (saveTimer) saveNow(); return; }
@@ -725,7 +728,12 @@ window.addEventListener('keydown', (e) => {
   const tools = { p: 'pen', h: 'highlighter', e: 'eraser', l: 'lasso', s: 'lasso', v: 'hand' };
   if (tools[k]) return setTool(tools[k]);
   if (e.key === 'Delete' || e.key === 'Backspace') return deleteSelected();
-  if (e.key === 'Escape') return clearSel();
+  if (e.key === 'Escape') {
+    if (!tocEl.hidden) return closeToc();
+    if (S.sel) return clearSel();
+    if (!findEl.hidden) return closeFind();
+    return;
+  }
   if (k === '+' || k === '=') return setZoom(S.zoom * 1.2);
   if (k === '-') return setZoom(S.zoom / 1.2);
   if (k === '0') return fitWidth();
@@ -745,6 +753,12 @@ const I = {
   undo: '<svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 010 11H11"/></svg>',
   redo: '<svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 000 11H13"/></svg>',
   export: '<svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 20.5h14"/></svg>',
+  toc: '<svg viewBox="0 0 24 24"><path d="M4 6h.01M4 12h.01M4 18h.01M8.5 6H20M8.5 12H20M8.5 18H20"/></svg>',
+  chevron: '<svg viewBox="0 0 24 24" class="small"><path d="M7 10l5 5 5-5"/></svg>',
+  search: '<svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5.5 5.5"/></svg>',
+  up: '<svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>',
+  down: '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
+  close: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
 };
 
 function setTool(t) {
@@ -763,6 +777,8 @@ function renderToolbar() {
   const btn = (a, html, title, on = false) => `<button data-a="${a}" title="${title}" class="${on ? 'on' : ''}">${html}</button>`;
   const sep = '<span class="sep"></span>';
   let h = '';
+  h += btn('toc', I.toc + I.chevron, 'Table of contents', !tocEl.hidden);
+  h += sep;
   h += btn('tool:pen', I.pen, 'Pen (P)', t === 'pen');
   h += btn('tool:highlighter', I.highlighter, 'Highlighter (H)', t === 'highlighter');
   h += btn('tool:eraser', I.eraser, 'Eraser (E) – pen eraser end also works', t === 'eraser');
@@ -791,6 +807,7 @@ function renderToolbar() {
   h += sep;
   h += btn('penOnly', 'Pen only', 'Ignore touch for drawing (touch scrolls). Palm rejection for pen tablets.', S.prefs.penOnly);
   h += btn('export', I.export + 'Export', 'Export a PDF with the ink baked in');
+  h += btn('find', I.search, 'Find in PDF (⌘F)', !findEl.hidden);
   h += '<span class="spacer"></span><span class="label" id="pageLabel"></span><span class="sep"></span><span id="status"></span>';
   $('#toolbar').innerHTML = h;
   updateToolbarState();
@@ -819,6 +836,8 @@ toolbar.addEventListener('click', (e) => {
   if (!b) return;
   const [a, arg] = b.dataset.a.split(':');
   if (a === 'tool') setTool(arg);
+  else if (a === 'toc') tocEl.hidden ? openToc() : closeToc();
+  else if (a === 'find') findEl.hidden ? openFind() : closeFind();
   else if (a === 'color') pickColor(arg);
   else if (a === 'undo') undo();
   else if (a === 'redo') redo();
@@ -861,6 +880,297 @@ function pickColor(c, fromInput = false) {
   savePrefs();
   if (!fromInput) renderToolbar();
 }
+
+// ---------------------------------------------------------------- navigation
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+// Scroll so that page i is at the top; yPdf (PDF space, origin bottom-left) targets a spot on it.
+function goToPage(i, yPdf = null) {
+  const P = S.pages[i];
+  if (!P) return;
+  const y = yPdf != null && isFinite(yPdf) ? clamp(P.vp.convertToViewportPoint(0, yPdf)[1], 0, P.h) : 0;
+  viewer.scrollTop = P.el.offsetTop + y * S.zoom - 12;
+}
+
+// ---------------------------------------------------------------- table of contents
+// The PDF's own outline (bookmarks) as a dropdown. Page numbers shown are PDF page
+// indices + 1, i.e. what the toolbar counter shows.
+const tocEl = document.createElement('div');
+tocEl.id = 'toc';
+tocEl.hidden = true;
+tocEl.innerHTML = '<input id="tocFilter" placeholder="Filter…" spellcheck="false" autocomplete="off"><div id="tocList"></div>';
+document.body.appendChild(tocEl);
+const T = { tree: [], flat: [], loading: null };
+
+async function resolveDest(dest) {
+  try {
+    if (typeof dest === 'string') dest = await S.pdf.getDestination(dest);
+    if (!Array.isArray(dest)) return { page: -1, y: null };
+    const ref = dest[0];
+    const page = ref && typeof ref === 'object' ? await S.pdf.getPageIndex(ref) : Number.isInteger(ref) ? ref : -1;
+    const kind = dest[1] && dest[1].name;
+    const y = kind === 'XYZ' ? dest[3] : kind === 'FitH' || kind === 'FitBH' ? dest[2] : null;
+    return { page, y };
+  } catch {
+    return { page: -1, y: null };
+  }
+}
+async function loadToc() {
+  const ol = (await S.pdf.getOutline().catch(() => null)) || [];
+  const flat = [];
+  const conv = (list, depth, parent) => list.map((o) => {
+    const n = { title: (o.title || '').replace(/\s+/g, ' ').trim() || 'Untitled', depth, parent, dest: o.dest, page: -1, y: null, open: false, idx: flat.length };
+    flat.push(n);
+    n.kids = conv(o.items || [], depth + 1, n);
+    return n;
+  });
+  T.tree = conv(ol, 0, null);
+  await Promise.all(flat.map(async (n) => Object.assign(n, await resolveDest(n.dest))));
+  T.flat = flat;
+}
+function currentTocNode() {
+  let cur = null;
+  for (const n of T.flat) if (n.page >= 0 && n.page <= S.curPage && (!cur || n.page >= cur.page)) cur = n;
+  return cur;
+}
+function renderToc() {
+  const list = $('#tocList');
+  if (!T.flat.length) { list.innerHTML = '<div class="empty">This PDF has no table of contents.</div>'; return; }
+  const f = $('#tocFilter').value.trim().toLowerCase();
+  const cur = currentTocNode();
+  const row = (n, depth) => {
+    const tw = n.kids.length && !f ? `<span class="tw" data-t="${n.idx}">${n.open ? '▾' : '▸'}</span>` : '<span class="tw"></span>';
+    return `<div class="row${n === cur ? ' cur' : ''}${n.page < 0 ? ' dead' : ''}" data-i="${n.idx}" style="padding-left:${4 + depth * 14}px">` +
+      `${tw}<span class="tt" title="${esc(n.title)}">${esc(n.title)}</span><span class="pg">${n.page >= 0 ? n.page + 1 : ''}</span></div>`;
+  };
+  let h = '';
+  if (f) { for (const n of T.flat) if (n.title.toLowerCase().includes(f)) h += row(n, 0); }
+  else {
+    const walk = (l) => l.forEach((n) => { h += row(n, n.depth); if (n.open) walk(n.kids); });
+    walk(T.tree);
+  }
+  list.innerHTML = h || '<div class="empty">No matching entries.</div>';
+}
+async function openToc() {
+  if (!S.pdf) return;
+  tocEl.hidden = false;
+  renderToolbar();
+  const input = $('#tocFilter');
+  input.value = '';
+  if (!T.loading) { $('#tocList').innerHTML = '<div class="empty">Loading…</div>'; T.loading = loadToc(); }
+  await T.loading;
+  if (tocEl.hidden) return;
+  for (let n = currentTocNode()?.parent; n; n = n.parent) n.open = true; // unfold down to where we are
+  renderToc();
+  $('#tocList .cur')?.scrollIntoView({ block: 'center' });
+  input.focus();
+}
+function closeToc() {
+  if (tocEl.hidden) return;
+  tocEl.hidden = true;
+  if (document.activeElement === $('#tocFilter')) document.activeElement.blur();
+  renderToolbar();
+}
+function pickToc(n) {
+  if (n.page < 0) return;
+  goToPage(n.page, n.y);
+  closeToc();
+}
+tocEl.addEventListener('click', (e) => {
+  const tw = e.target.closest('.tw[data-t]');
+  if (tw) { const n = T.flat[+tw.dataset.t]; n.open = !n.open; renderToc(); return; }
+  const r = e.target.closest('.row');
+  if (r) pickToc(T.flat[+r.dataset.i]);
+});
+$('#tocFilter').addEventListener('input', renderToc);
+$('#tocFilter').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { e.preventDefault(); closeToc(); }
+  else if (e.key === 'Enter') { const r = $('#tocList .row:not(.dead)'); if (r) pickToc(T.flat[+r.dataset.i]); }
+});
+// Click outside closes the dropdown, and that click doesn't draw on the page.
+window.addEventListener('pointerdown', (e) => {
+  if (tocEl.hidden || tocEl.contains(e.target) || e.target.closest('[data-a=toc]')) return;
+  closeToc();
+  if (e.target.closest('.page')) { e.stopPropagation(); e.preventDefault(); }
+}, true);
+
+// ---------------------------------------------------------------- find (⌘F)
+// Searches the PDF's text layer (pdf.js getTextContent), page by page. Whitespace and
+// line breaks count as one space, so phrases that wrap across lines are still found.
+// Matches are drawn as boxes in % of the page, so they follow zoom without redrawing.
+const findEl = document.createElement('div');
+findEl.id = 'find';
+findEl.hidden = true;
+findEl.innerHTML = `<input id="findInput" placeholder="Find in PDF" spellcheck="false" autocomplete="off">` +
+  `<button data-f="case" title="Match case">Aa</button><span id="findCount"></span>` +
+  `<button data-f="prev" title="Previous (⇧Enter)">${I.up}</button><button data-f="next" title="Next (Enter)">${I.down}</button>` +
+  `<button data-f="close" title="Close (Esc)">${I.close}</button>`;
+document.body.appendChild(findEl);
+const findInput = $('#findInput');
+const F = { q: null, cs: false, hits: [], cur: -1, run: 0, busy: false };
+
+const isSpace = (c) => c === 32 || c === 9 || c === 10 || c === 13 || c === 160;
+async function pageText(P) {
+  if (P.txt) return P.txt;
+  const tc = await (await S.pdf.getPage(P.i + 1)).getTextContent();
+  let raw = '';
+  const runs = [];
+  for (const it of tc.items) {
+    if (typeof it.str !== 'string') continue;
+    if (it.str) {
+      const font = tc.styles[it.fontName]?.fontFamily || 'sans-serif';
+      runs.push({ a: raw.length, b: raw.length + it.str.length, str: it.str, font, m: pdfjsLib.Util.transform(P.vp.transform, it.transform), w: it.width });
+      raw += it.str;
+    }
+    if (it.hasEOL) raw += ' ';
+  }
+  // collapse whitespace; map[k] = index in raw of normalized char k
+  let norm = '';
+  const map = [];
+  for (let k = 0; k < raw.length; k++) {
+    const c = raw.charCodeAt(k);
+    if (isSpace(c)) {
+      if (!norm.length || norm.endsWith(' ')) continue;
+      norm += ' ';
+    } else norm += raw[k];
+    map.push(k);
+  }
+  const low = norm.toLowerCase();
+  return (P.txt = { norm, low: low.length === norm.length ? low : norm, map, runs });
+}
+// Boxes (page pt) covering raw chars [a, b). Within one text run, the position of a
+// character is estimated by measuring the text in a similar system font (serif /
+// sans / mono, as pdf.js reports it) – close enough for proportional fonts.
+const measureCtx = document.createElement('canvas').getContext('2d');
+function runFrac(r, k) {
+  if (k <= 0) return 0;
+  if (k >= r.str.length) return 1;
+  measureCtx.font = `100px ${r.font}`;
+  const full = measureCtx.measureText(r.str).width;
+  return full ? measureCtx.measureText(r.str.slice(0, k)).width / full : k / r.str.length;
+}
+function matchRects(txt, a, b) {
+  const rects = [];
+  for (const r of txt.runs) {
+    if (r.b <= a || r.a >= b) continue;
+    const t0 = runFrac(r, a - r.a), t1 = runFrac(r, b - r.a);
+    const [m0, m1, ux, uy, ox, oy] = r.m; // (ux, uy): baseline → top of the glyphs
+    const n = Math.hypot(m0, m1) || 1, dx = (m0 / n) * r.w, dy = (m1 / n) * r.w;
+    const xs = [], ys = [];
+    for (const t of [t0, t1]) {
+      const bx = ox + dx * t, by = oy + dy * t;
+      xs.push(bx - ux * 0.25, bx + ux);
+      ys.push(by - uy * 0.25, by + uy);
+    }
+    rects.push([Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]);
+  }
+  return rects;
+}
+function drawHit(hit) {
+  const P = hit.P;
+  if (!P.hitsEl) { P.hitsEl = document.createElement('div'); P.hitsEl.className = 'hits'; P.el.appendChild(P.hitsEl); }
+  for (const [x0, y0, x1, y1] of hit.rects) {
+    const d = document.createElement('div');
+    d.className = 'hit';
+    d.style.cssText = `left:${(x0 / P.w) * 100}%;top:${(y0 / P.h) * 100}%;width:${((x1 - x0) / P.w) * 100}%;height:${((y1 - y0) / P.h) * 100}%`;
+    P.hitsEl.appendChild(d);
+    hit.els.push(d);
+  }
+}
+function clearHits() {
+  for (const P of S.pages) if (P.hitsEl) P.hitsEl.textContent = '';
+  F.hits = [];
+  F.cur = -1;
+}
+function updateFindCount() {
+  const el = $('#findCount');
+  const n = F.hits.length;
+  const pos = F.cur >= 0 ? `${F.cur + 1} / ${n}` : `${n} found`;
+  el.textContent = !F.q ? '' : n ? pos + (F.busy ? '…' : '') : F.busy ? 'Searching…' : 'No results';
+  el.classList.toggle('none', !!F.q && !n && !F.busy);
+}
+function setCur(i) {
+  F.hits[F.cur]?.els.forEach((d) => d.classList.remove('cur'));
+  F.cur = i;
+  const h = F.hits[i];
+  h.els.forEach((d) => d.classList.add('cur'));
+  updateFindCount();
+  if (!h.rects.length) return goToPage(h.P.i);
+  const [x0, y0, x1, y1] = h.rects[0], P = h.P, z = S.zoom;
+  const top = P.el.offsetTop + y0 * z, bot = P.el.offsetTop + y1 * z;
+  if (top < viewer.scrollTop + 50 || bot > viewer.scrollTop + viewer.clientHeight - 20) viewer.scrollTop = top - viewer.clientHeight / 3;
+  const left = P.el.offsetLeft + x0 * z, right = P.el.offsetLeft + x1 * z;
+  if (left < viewer.scrollLeft || right > viewer.scrollLeft + viewer.clientWidth) viewer.scrollLeft = left - viewer.clientWidth / 3;
+}
+async function runFind() {
+  const run = ++F.run;
+  clearHits();
+  F.q = findInput.value.replace(/\s+/g, ' ').trim();
+  F.busy = !!F.q;
+  updateFindCount();
+  if (!F.q || !S.pdf) return;
+  const needle = F.cs ? F.q : F.q.toLowerCase();
+  const start = S.curPage;
+  for (const P of S.pages) {
+    const txt = await pageText(P);
+    if (run !== F.run) return; // a newer search started
+    const hay = F.cs ? txt.norm : txt.low;
+    for (let k = hay.indexOf(needle); k !== -1; k = hay.indexOf(needle, k + needle.length)) {
+      const hit = { P, rects: matchRects(txt, txt.map[k], txt.map[k + needle.length - 1] + 1), els: [] };
+      F.hits.push(hit);
+      drawHit(hit);
+      if (F.cur < 0 && P.i >= start) setCur(F.hits.length - 1); // first match from the current page on
+    }
+    if (P.i % 25 === 24) updateFindCount();
+  }
+  F.busy = false;
+  if (F.cur < 0 && F.hits.length) setCur(0);
+  updateFindCount();
+}
+function stepFind(d) {
+  if (findEl.hidden) return;
+  const q = findInput.value.replace(/\s+/g, ' ').trim();
+  if (q !== F.q) { clearTimeout(findTimer); return runFind(); }
+  const n = F.hits.length;
+  if (n) setCur((F.cur + d + n) % n);
+}
+function openFind() {
+  if (!S.pdf) return;
+  closeToc();
+  if (findEl.hidden) {
+    findEl.hidden = false;
+    renderToolbar();
+    if (findInput.value.trim()) runFind();
+  }
+  findInput.focus();
+  findInput.select();
+}
+function closeFind() {
+  if (findEl.hidden) return;
+  findEl.hidden = true;
+  F.run++;
+  F.busy = false;
+  F.q = null;
+  clearHits();
+  if (document.activeElement === findInput) findInput.blur();
+  renderToolbar();
+}
+let findTimer = 0;
+findInput.addEventListener('input', () => { clearTimeout(findTimer); findTimer = setTimeout(runFind, 200); });
+findInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); stepFind(e.shiftKey ? -1 : 1); }
+  else if (e.key === 'Escape') { e.preventDefault(); closeFind(); }
+});
+findEl.addEventListener('mousedown', (e) => { if (e.target.closest('button')) e.preventDefault(); }); // keep focus in the input
+findEl.addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-f]');
+  if (!b) return;
+  const f = b.dataset.f;
+  if (f === 'next') stepFind(1);
+  else if (f === 'prev') stepFind(-1);
+  else if (f === 'close') closeFind();
+  else if (f === 'case') { F.cs = !F.cs; b.classList.toggle('on', F.cs); runFind(); }
+});
 
 // ---------------------------------------------------------------- export
 function svgPath(o, vp) {
@@ -1006,7 +1316,9 @@ async function init(msg) {
 
   for (let i = 0; i < S.pdf.numPages; i++) {
     const vp = (await S.pdf.getPage(i + 1)).getViewport({ scale: 1 });
-    S.pages.push(buildPage(i, vp.width, vp.height));
+    const P = buildPage(i, vp.width, vp.height);
+    P.vp = vp; // scale-1 viewport: maps PDF space (outline targets, text) to page pt
+    S.pages.push(P);
   }
 
   const ink = msg.ink && typeof msg.ink.pages === 'object' ? msg.ink.pages : {};

@@ -16,6 +16,10 @@ Tested with an iPad and Apple Pencil as a pen display for a Mac (via Sidecar).
 | Lasso (move, delete, recolor) | `L` |
 | Pan | `V` or hold `Space` |
 
+## Navigation
+- **Table of contents** (☰ button, top left): the PDF's own outline as a dropdown. Type to filter, click an entry to jump.
+- **Find** (`⌘F` / `Ctrl+F` or 🔍): highlights every match. `Enter` / `⇧Enter` for next / previous, `Esc` closes.
+
 Undo with `⌘Z`, redo with `⇧⌘Z`. Zoom by pinching or with `⌘` + scroll.
 
 **Pen only** makes your finger scroll while only the pen draws. **Smooth** evens out shaky handwriting.
