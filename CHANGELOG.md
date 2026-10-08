@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.2.1
+- Added GitHub repository and issue tracker links. Simpler README.
+
 ## 0.2.0
 First public release.
 - Pressure-sensitive pen with adjustable stroke smoothing, multiply-blend highlighter

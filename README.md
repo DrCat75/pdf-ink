@@ -29,5 +29,5 @@ Ink saves automatically to `yourfile.pdf.ink.json` next to the PDF. The PDF itse
 Everything runs locally. No data leaves your computer.
 
 ---
-MIT License. Third-party licenses are in `THIRD_PARTY_NOTICES.md`.
+MIT License. Third-party licenses are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 Build from source: `npm install && npm run package`.
