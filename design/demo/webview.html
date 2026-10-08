@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<!-- The real webview bundle with a mocked VS Code API. Pointer positions go to the parent's fake cursor. -->
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="../../media/style.css">
+</head>
+<body>
+<div id="toolbar"></div><div id="viewer"><div id="pages"></div></div>
+<script>
+for (const t of ['pointermove', 'pointerdown', 'pointerup']) window.addEventListener(t, (e) => parent.forwardCursor?.(e), true);
+window.acquireVsCodeApi = () => ({ postMessage: (m) => {
+  if (m.type !== 'ready') return;
+  const base = new URL('../../media/', location.href).href;
+  window.postMessage({ type: 'init', name: 'camera_models.pdf', pdfUrl: new URL('sample.pdf', location.href).href, ink: null, view: null,
+    prefs: { tool: 'pen', pen: { color: '#1a4fd6', size: 2.4 }, highlighter: { color: '#ffe14d', size: 16 }, eraser: { size: 6, mode: 'stroke' }, penOnly: false, smooth: 0.5 },
+    assets: { worker: base + 'pdf.worker.min.mjs', base } }, '*');
+} });
+</script>
+<script type="module" src="../../media/webview.js"></script>
+</body></html>

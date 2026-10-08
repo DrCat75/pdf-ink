@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<!-- Sample PDF for the demo recording (printed to sample.pdf by record.mjs). Own text, no third-party content. -->
+<html><head><meta charset="utf-8">
+<style>
+@page { size: 960px 540px; margin: 0; }
+html, body { margin: 0; }
+body { font: 26px/1.5 "Helvetica Neue", Helvetica, Arial, sans-serif; color: #222; }
+section { position: relative; width: 960px; height: 540px; box-sizing: border-box; padding: 54px 72px; page-break-after: always; overflow: hidden; }
+section:last-child { page-break-after: auto; }
+h1 { font-size: 40px; font-weight: 600; margin: 0 0 30px; color: #1b2a4a; }
+h1 .n { color: #4a72c4; margin-right: 4px; }
+ul { margin: 0; padding-left: 30px; }
+li { margin: 6px 0; }
+.eq { margin: 34px auto 0; width: max-content; padding: 14px 34px; font: italic 32px "Times New Roman", Times, serif; background: #f2f5fb; border-radius: 8px; }
+.foot { position: absolute; left: 72px; right: 72px; bottom: 24px; font-size: 15px; color: #8a93a3; display: flex; justify-content: space-between; }
+</style></head>
+<body>
+<section>
+  <h1><span class="n">1</span> The Pinhole Camera</h1>
+  <ul>
+    <li>A pinhole lets exactly <span id="ul1">one ray</span> through per scene point</li>
+    <li><span id="hl1">The image is inverted and scaled by f / Z</span></li>
+    <li>Far objects appear smaller than near ones</li>
+  </ul>
+  <div class="eq" id="eq">x = f · X / Z &nbsp;&nbsp;&nbsp; y = f · Y / Z</div>
+  <div class="foot"><span>Camera Models – sample notes</span><span>1</span></div>
+</section>
+<section>
+  <h1><span class="n">2</span> Perspective Projection</h1>
+  <ul>
+    <li>Pixel coordinates follow from the intrinsics K</li>
+    <li>The extrinsics [R | t] map world points into the camera frame</li>
+    <li>λ equals the depth of the point in the camera frame</li>
+  </ul>
+  <div class="eq">λ (u, v, 1)ᵀ = K [R | t] P<sub>W</sub></div>
+  <div class="foot"><span>Camera Models – sample notes</span><span>2</span></div>
+</section>
+<section>
+  <h1><span class="n">3</span> Lens Distortion</h1>
+  <ul>
+    <li>Real lenses bend straight lines near the image border</li>
+    <li>Radial distortion grows with the distance r from the center</li>
+    <li>Barrel distortion: k₁ &lt; 0, pincushion distortion: k₁ &gt; 0</li>
+  </ul>
+  <div class="eq">u<sub>d</sub> = (1 + k₁ r²)(u − u₀) + u₀</div>
+  <div class="foot"><span>Camera Models – sample notes</span><span>3</span></div>
+</section>
+<section>
+  <h1><span class="n">4</span> Calibration</h1>
+  <ul>
+    <li>Estimate K, R, t and the distortion from known 3D–2D pairs</li>
+    <li>DLT gives a linear solution from at least 6 points</li>
+    <li>Refine everything by minimizing the reprojection error</li>
+  </ul>
+  <div class="foot"><span>Camera Models – sample notes</span><span>4</span></div>
+</section>
+</body></html>

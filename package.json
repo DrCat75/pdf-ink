@@ -2,7 +2,7 @@
   "name": "pdf-ink",
   "displayName": "PDF Ink",
   "description": "A Visual Studio Code PDF edit extension intended to work with touch pen displays",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "niklehmann",
   "author": {
     "name": "Nik Lehmann"
@@ -84,7 +84,8 @@
     "build": "node build.mjs",
     "package": "node build.mjs && vsce package --no-dependencies",
     "publish:vsce": "node build.mjs && vsce publish --no-dependencies",
-    "publish:ovsx": "node build.mjs && vsce package --no-dependencies && ovsx publish pdf-ink-$npm_package_version.vsix"
+    "publish:ovsx": "node build.mjs && vsce package --no-dependencies && ovsx publish pdf-ink-$npm_package_version.vsix",
+    "demo": "node build.mjs && node design/demo/record.mjs"
   },
   "devDependencies": {
     "@vscode/vsce": "^4.0.0",

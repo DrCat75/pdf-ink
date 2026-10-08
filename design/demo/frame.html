@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<!-- A minimal VS Code-like window for the demo recording: PDF Ink on the left, a Python file on the right. -->
+<html><head><meta charset="utf-8">
+<style>
+html, body { margin: 0; height: 100%; background: #1e1e1e; font: 13px -apple-system, "Helvetica Neue", sans-serif; color: #ccc; overflow: hidden; }
+#title { height: 30px; background: #2d2d2d; display: flex; align-items: center; justify-content: center; position: relative; color: #a8a8a8; font-size: 12.5px; }
+#title .dots { position: absolute; left: 12px; display: flex; gap: 8px; }
+#title .dots i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+#main { position: absolute; top: 30px; bottom: 22px; left: 0; right: 0; display: flex; }
+#activity { width: 48px; flex: none; background: #333; display: flex; flex-direction: column; align-items: center; gap: 22px; padding-top: 14px; }
+#activity i { width: 22px; height: 22px; border: 2px solid #858585; border-radius: 4px; display: block; opacity: .8; }
+#activity i:first-child { border-color: #fff; opacity: 1; }
+.group { display: flex; flex-direction: column; min-width: 0; }
+#left { width: 900px; flex: none; border-right: 1px solid #3c3c3c; }
+#right { flex: 1; }
+.tabs { height: 35px; flex: none; background: #252526; display: flex; }
+.tab { display: flex; align-items: center; gap: 7px; padding: 0 14px; background: #1e1e1e; color: #fff; border-top: 1px solid transparent; }
+.group.active .tab { border-top-color: #0078d4; }
+.tab b { font-size: 10px; font-weight: 700; }
+.tab span.x { opacity: .6; margin-left: 10px; }
+iframe { flex: 1; border: 0; width: 100%; display: block; }
+#status { position: absolute; bottom: 0; left: 0; right: 0; height: 22px; background: #007acc; color: #fff; font-size: 12px; display: flex; align-items: center; padding: 0 10px; gap: 16px; }
+#status .r { margin-left: auto; }
+
+/* code editor */
+#code { flex: 1; overflow: hidden; padding-top: 6px; font: 16px/25px Menlo, Monaco, "SF Mono", monospace; color: #d4d4d4; white-space: pre; }
+#code .ln { display: flex; }
+#code .ln.cur { background: #282828; box-shadow: inset 0 1px #333, inset 0 -1px #333; }
+#code .no { width: 36px; flex: none; text-align: right; padding-right: 18px; color: #6e7681; }
+#code .ln.cur .no { color: #c6c6c6; }
+#code .caret { display: inline-block; width: 2px; height: 21px; margin-right: -2px; vertical-align: -5px; background: #aeafad; animation: blink 1.05s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.k { color: #c586c0; } .d { color: #569cd6; } .f { color: #dcdcaa; } .s { color: #ce9178; } .c { color: #6a9955; } .n { color: #b5cea8; } .v { color: #9cdcfe; } .m { color: #4ec9b0; }
+
+/* fake cursor (screen recordings have none) and key overlay */
+#cursor { position: fixed; left: 0; top: 0; z-index: 1000; pointer-events: none; transform: translate(-100px, -100px); }
+#cursor svg { position: absolute; display: block; }
+#cursor .arrow { left: -2px; top: -1px; width: 22px; height: 22px; }
+#cursor .pen { left: -2px; top: -42px; width: 44px; height: 44px; display: none; }
+#cursor.pen .arrow { display: none; }
+#cursor.pen .pen { display: block; }
+#keys { position: fixed; left: 50%; bottom: 46px; z-index: 999; transform: translateX(-50%); display: flex; gap: 6px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+#keys.on { opacity: 1; }
+#keys kbd { font: 600 22px -apple-system, "Helvetica Neue", sans-serif; color: #fff; background: rgba(30,30,30,.88); border: 1px solid #666; border-bottom-width: 3px; border-radius: 8px; padding: 6px 14px; }
+</style></head>
+<body>
+<div id="title"><div class="dots"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></div>camera.py — notes</div>
+<div id="main">
+  <div id="activity"><i></i><i></i><i></i><i></i></div>
+  <div class="group active" id="left">
+    <div class="tabs"><div class="tab"><b style="color:#e2574c">PDF</b>camera_models.pdf<span class="x">✕</span></div></div>
+    <iframe id="wv" src="webview.html"></iframe>
+  </div>
+  <div class="group" id="right">
+    <div class="tabs"><div class="tab"><b style="color:#3b8eea">PY</b>camera.py<span class="x">✕</span></div></div>
+    <div id="code"></div>
+  </div>
+</div>
+<div id="status"><span>⎇ main</span><span>PDF Ink</span><span class="r">Python 3.12 (vamr)</span></div>
+<div id="keys"></div>
+<div id="cursor">
+  <svg class="arrow" viewBox="0 0 22 22"><path d="M3 2l0 16 4.2-4 2.8 6.4 2.6-1.1-2.8-6.3 5.9-.2z" fill="#fff" stroke="#111" stroke-width="1.3" stroke-linejoin="round"/></svg>
+  <svg class="pen" viewBox="0 0 44 44"><g transform="rotate(45 22 22)"><rect x="18.5" y="-6" width="7" height="34" rx="2.2" fill="#e9ecf1" stroke="#5b6270" stroke-width="1.2"/><path d="M18.5 28 L22 39 L25.5 28 z" fill="#d7dbe2" stroke="#5b6270" stroke-width="1.2" stroke-linejoin="round"/><path d="M21 35.6 L22 39 L23 35.6 z" fill="#333"/></g></svg>
+</div>
+<script>
+// ---- fake cursor: own pointer events + the ones the webview forwards
+const cursorEl = document.getElementById('cursor');
+window.fakeCursor = (x, y, type) => { cursorEl.style.transform = `translate(${x}px, ${y}px)`; cursorEl.classList.toggle('pen', type === 'pen'); };
+for (const t of ['pointermove', 'pointerdown', 'pointerup']) window.addEventListener(t, (e) => fakeCursor(e.clientX, e.clientY, e.pointerType), true);
+window.forwardCursor = (e) => { const r = document.getElementById('wv').getBoundingClientRect(); fakeCursor(r.left + e.clientX, r.top + e.clientY, e.pointerType); };
+
+// ---- key overlay
+let keysTimer = 0;
+window.keycast = (...keys) => {
+  const el = document.getElementById('keys');
+  el.innerHTML = keys.map((k) => `<kbd>${k}</kbd>`).join('');
+  el.classList.add('on');
+  clearTimeout(keysTimer);
+  keysTimer = setTimeout(() => el.classList.remove('on'), 900);
+};
+
+// ---- tiny code editor (Dark+ colors)
+const lines = [
+  'import numpy as np',
+  '',
+  '',
+  'def project_points(P_W, K, T_CW):',
+  '    """World points (3xN) to pixels (2xN)."""',
+  '    P_C = T_CW[:3, :3] @ P_W + T_CW[:3, 3:]',
+  '',
+  '    return uv[:2]',
+  '',
+  '',
+  'def distort(uv, K, k1):',
+  '    """Radial lens distortion of pixels (2xN)."""',
+  '    u0 = K[:2, 2:]',
+  '    r2 = np.sum((uv - u0) ** 2, axis=0)',
+  '',
+];
+const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+const TOK = /(#.*$)|("""[^]*?"""|"""[^]*$|"[^"]*"|'[^']*')|\b(import|as|return|from|for|in|if|else)\b|\b(def)\b|\b(\d+(?:\.\d+)?)\b|\b(np)\b|([A-Za-z_]\w*)(?=\()|([A-Za-z_]\w*)/g;
+function hl(line) {
+  let out = '', last = 0;
+  line.replace(TOK, (m, c, s, k, d, n, mod, f, v, i) => {
+    out += esc(line.slice(last, i));
+    const cls = c ? 'c' : s ? 's' : k ? 'k' : d ? 'd' : n ? 'n' : mod ? 'm' : f ? 'f' : 'v';
+    out += `<span class="${cls}">${esc(m)}</span>`;
+    last = i + m.length;
+    return m;
+  });
+  return out + esc(line.slice(last));
+}
+const ed = { focus: null, col: 0 };
+function render() {
+  document.getElementById('code').innerHTML = lines.map((l, i) => {
+    const cur = ed.focus === i;
+    const body = cur ? hl(l.slice(0, ed.col)) + '<span class="caret"></span>' + hl(l.slice(ed.col)) : hl(l);
+    return `<div class="ln${cur ? ' cur' : ''}" data-i="${i}"><span class="no">${i + 1}</span><span>${body || ' '}</span></div>`;
+  }).join('');
+}
+window.code = {
+  lineBox(i) { const r = document.querySelector(`#code .ln[data-i="${i}"]`).getBoundingClientRect(); return [r.left + 90, r.top + r.height / 2]; },
+  focus(i) {
+    ed.focus = i; ed.col = lines[i].length;
+    document.getElementById('left').classList.remove('active');
+    document.getElementById('right').classList.add('active');
+    render();
+  },
+  blur() {
+    ed.focus = null;
+    document.getElementById('right').classList.remove('active');
+    document.getElementById('left').classList.add('active');
+    render();
+  },
+  // type text at the caret; '\n' opens a new line below
+  async type(text, ms = 38) {
+    for (const ch of text) {
+      if (ch === '\n') { lines.splice(ed.focus + 1, 0, ''); ed.focus++; ed.col = 0; }
+      else { const l = lines[ed.focus]; lines[ed.focus] = l.slice(0, ed.col) + ch + l.slice(ed.col); ed.col++; }
+      render();
+      await new Promise((r) => setTimeout(r, ch === ' ' ? ms * 0.6 : ms * (0.7 + Math.random() * 0.6)));
+    }
+  },
+};
+render();
+</script>
+</body></html>

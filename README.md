@@ -2,6 +2,8 @@
 
 Handwrite on PDFs in VS Code with a pen display.
 
+![PDF Ink: writing, highlighting, erasing, lasso, find and table of contents](images/demo.gif)
+
 ## Getting started
 Right-click a PDF → **Open with PDF Ink**.
 
