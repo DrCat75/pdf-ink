@@ -196,6 +196,7 @@ function sizePages() {
     P.el.style.width = P.w * S.zoom + 'px';
     P.el.style.height = P.h * S.zoom + 'px';
   }
+  pagesEl.style.setProperty('--total-scale-factor', S.zoom); // text layers scale their font size with this
   positionSel();
 }
 
@@ -216,6 +217,7 @@ async function renderPage(P) {
   P.rs = rs;
   const page = await S.pdf.getPage(P.i + 1);
   if (P.rs !== rs || !P.visible) return;
+  renderText(P, page);
   const vp = page.getViewport({ scale: rs });
   const c = document.createElement('canvas');
   c.className = 'pdf';
@@ -235,8 +237,94 @@ async function renderPage(P) {
   P.pdfC = c;
 }
 
+// pdf.js text layer: one positioned span per text run, for native selection (text tool).
+// Spans are placed in % of the page and sized by --total-scale-factor, so zoom needs no rebuild.
+async function renderText(P, page) {
+  if (P.textEl) return;
+  const el = (P.textEl = document.createElement('div'));
+  el.className = 'textLayer';
+  P.el.appendChild(el);
+  const tl = (P.textLayer = new pdfjsLib.TextLayer({ textContentSource: page.streamTextContent(), container: el, viewport: page.getViewport({ scale: S.zoom }) }));
+  el.style.width = el.style.height = ''; // pdf.js sizes it via CSS vars we don't use; inset: 0 fills the page instead
+  el.addEventListener('pointerdown', () => el.classList.add('selecting'));
+  // copy ligatures (ﬁ, ﬂ) as plain letters, the way pdf.js's own viewer does
+  el.addEventListener('copy', (e) => {
+    e.clipboardData.setData('text/plain', pdfjsLib.normalizeUnicode(getSelection().toString()).replace(/\0/g, ''));
+    e.preventDefault();
+  });
+  try {
+    await tl.render();
+  } catch (err) {
+    if (!(err instanceof pdfjsLib.AbortException)) console.error(err);
+    return;
+  }
+  const end = document.createElement('div');
+  end.className = 'endOfContent';
+  el.appendChild(end);
+}
+window.addEventListener('pointerup', () => { for (const el of document.querySelectorAll('.textLayer.selecting')) el.classList.remove('selecting'); });
+
+// Text selection → highlighter strokes (one per line, per page), one undo step even across
+// pages. Rotated text (e.g. arXiv margin) gets vertical strokes.
+function highlightSelection() {
+  const sel = getSelection();
+  if (!sel.rangeCount || sel.isCollapsed) return;
+  const range = sel.getRangeAt(0), acts = [];
+  for (const P of S.pages) {
+    if (!P.textEl || !range.intersectsNode(P.textEl)) continue;
+    const add = selectionStrokes(P, range);
+    if (!add.length) continue;
+    P.strokes.push(...add);
+    drawInk(P);
+    acts.push({ p: P.i, add, del: [] });
+  }
+  if (!acts.length) return;
+  pushUndo(acts.length === 1 ? acts[0] : { group: acts });
+  sel.removeAllRanges();
+}
+function selectionStrokes(P, range) {
+  const pr = P.el.getBoundingClientRect(), z = S.zoom;
+  // Boxes of the selected text only: clip a range to each text node, so span/br element boxes aren't included.
+  const boxes = [];
+  const tw = document.createTreeWalker(P.textEl, NodeFilter.SHOW_TEXT);
+  for (let n; (n = tw.nextNode()); ) {
+    if (!range.intersectsNode(n)) continue;
+    const r = document.createRange();
+    r.selectNodeContents(n);
+    if (range.compareBoundaryPoints(Range.START_TO_START, r) > 0) r.setStart(range.startContainer, range.startOffset);
+    if (range.compareBoundaryPoints(Range.END_TO_END, r) < 0) r.setEnd(range.endContainer, range.endOffset);
+    const v = Math.abs(Math.abs(parseFloat(n.parentElement.style.getPropertyValue('--rotate')) || 0) % 180 - 90) < 1;
+    for (const b of r.getClientRects()) {
+      // page pt, clipped to the page
+      const x0 = clamp((b.left - pr.left) / z, 0, P.w), x1 = clamp((b.right - pr.left) / z, 0, P.w);
+      const y0 = clamp((b.top - pr.top) / z, 0, P.h), y1 = clamp((b.bottom - pr.top) / z, 0, P.h);
+      if (x1 - x0 < 0.5 || y1 - y0 < 0.5) continue;
+      // along the line: a0..a1; across it: center c, thickness t
+      boxes.push(v ? { v, a0: y0, a1: y1, c: (x0 + x1) / 2, t: x1 - x0 } : { v, a0: x0, a1: x1, c: (y0 + y1) / 2, t: y1 - y0 });
+    }
+  }
+  // merge boxes on the same line (words/runs next to each other) into one
+  boxes.sort((a, b) => a.v - b.v || a.c - b.c || a.a0 - b.a0);
+  const lines = [];
+  for (const b of boxes) {
+    const L = lines.find((L) => L.v === b.v && Math.abs(L.c - b.c) < Math.min(L.t, b.t) / 2 &&
+      Math.max(b.a0 - L.a1, L.a0 - b.a1) < Math.max(L.t, b.t)); // close enough along the line (not the other column)
+    if (!L) { lines.push({ ...b }); continue; }
+    const lo = Math.min(L.c - L.t / 2, b.c - b.t / 2), hi = Math.max(L.c + L.t / 2, b.c + b.t / 2);
+    L.a0 = Math.min(L.a0, b.a0); L.a1 = Math.max(L.a1, b.a1); L.c = (lo + hi) / 2; L.t = hi - lo;
+  }
+  // round caps reach w/2 past each end point, so pull the ends in by w/2
+  const c = S.prefs.highlighter.color;
+  return lines.map((L) => {
+    const h = L.t / 2, a0 = L.a0 + h, a1 = Math.max(a0, L.a1 - h);
+    const pt = (a) => (L.v ? [r2(L.c), r2(a), 0.5] : [r2(a), r2(L.c), 0.5]);
+    return prep({ id: uid(), c, w: r2(L.t), hl: true, sp: false, pts: a1 - a0 < 0.01 ? [pt(a0)] : [pt(a0), pt(a1)] });
+  });
+}
+
 function releasePage(P) {
   if (P.task) { P.task.cancel(); P.task = null; }
+  if (P.textEl) { P.textLayer.cancel(); P.textEl.remove(); P.textEl = P.textLayer = null; }
   if (P.pdfC) { P.pdfC.width = 0; P.pdfC.remove(); P.pdfC = null; }
   for (const c of [P.hlC, P.inkC, P.liveC]) c.width = c.height = 0;
   P.rs = P.inkRs = 0;
@@ -378,14 +466,16 @@ function deleteSelected() {
 }
 
 // ---------------------------------------------------------------- undo / redo
+// An action is { p, add, del } for one page, or { group: [actions] } to undo several pages in one step.
 function pushUndo(a) {
-  if (!a.add.length && !a.del.length) return;
+  if (!a.group && !a.add.length && !a.del.length) return;
   S.undo.push(a);
   if (S.undo.length > 1000) S.undo.shift();
   S.redo.length = 0;
   changed();
 }
 function applyAction(a, inverse) {
+  if (a.group) return a.group.forEach((x) => applyAction(x, inverse));
   const P = S.pages[a.p];
   const del = inverse ? a.add : a.del, add = inverse ? a.del : a.add;
   const ids = new Set(del.map((s) => s.id));
@@ -462,6 +552,9 @@ function onDown(e, P) {
   if (document.activeElement instanceof HTMLInputElement) document.activeElement.blur(); // tool keys work again after drawing
   const isTouch = e.pointerType === 'touch';
   const wantsPan = S.prefs.tool === 'hand' || spaceHeld || e.button === 1 || (isTouch && S.prefs.penOnly);
+  // Pen with eraser end / barrel eraser button erases regardless of tool.
+  const eraserEnd = e.pointerType === 'pen' && (e.button === 5 || e.buttons & 32);
+  if (S.prefs.tool === 'text' && !wantsPan && !eraserEnd) return; // leave it to the browser: native text selection
   if (!wantsPan && e.pointerType === 'mouse' && e.button !== 0) return;
   e.preventDefault();
   P.el.setPointerCapture(e.pointerId);
@@ -470,9 +563,7 @@ function onDown(e, P) {
     document.body.classList.add('panning');
     return;
   }
-  // Pen with eraser end / barrel eraser button erases regardless of tool.
-  let tool = S.prefs.tool;
-  if (e.pointerType === 'pen' && (e.button === 5 || e.buttons & 32)) tool = 'eraser';
+  const tool = eraserEnd ? 'eraser' : S.prefs.tool;
   const rect = P.el.getBoundingClientRect();
   const p = pagePt(e, rect);
   G = { tool, P, id: e.pointerId, rect };
@@ -725,9 +816,10 @@ window.addEventListener('keydown', (e) => {
   if (mod && k === 's') { e.preventDefault(); if (saveTimer) saveNow(); return; }
   if (mod || e.altKey) return;
   if (e.key === ' ') { e.preventDefault(); if (!spaceHeld) { spaceHeld = true; document.body.dataset.tool = 'hand'; } return; }
-  const tools = { p: 'pen', h: 'highlighter', e: 'eraser', l: 'lasso', s: 'lasso', v: 'hand' };
+  const tools = { p: 'pen', h: 'highlighter', e: 'eraser', l: 'lasso', s: 'lasso', t: 'text', v: 'hand' };
   if (tools[k]) return setTool(tools[k]);
   if (e.key === 'Delete' || e.key === 'Backspace') return deleteSelected();
+  if (e.key === 'Enter') return highlightSelection();
   if (e.key === 'Escape') {
     if (!tocEl.hidden) return closeToc();
     if (S.sel) return clearSel();
@@ -749,6 +841,7 @@ const I = {
   highlighter: '<svg viewBox="0 0 24 24"><path d="M9 17l-2.5 2.5H3V16l2.5-2.5"/><path d="M5.5 13.5L15 4l5 5-9.5 9.5z"/><path d="M14 21h7"/></svg>',
   eraser: '<svg viewBox="0 0 24 24"><path d="M8.5 20h11"/><path d="M4.5 15.5l10-10 5 5-9 9.5h-3.5z"/><path d="M9.5 10.5l5 5"/></svg>',
   lasso: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="10" rx="8" ry="5.5" stroke-dasharray="3 2.6"/><path d="M8.5 15c-1.5 2.5-.5 5.5 2.5 5.5"/></svg>',
+  text: '<svg viewBox="0 0 24 24"><path d="M5 7V4.5h14V7M12 4.5v15M9 19.5h6"/></svg>',
   hand: '<svg viewBox="0 0 24 24"><path d="M8 13V6a1.5 1.5 0 013 0v5M11 11V4.5a1.5 1.5 0 013 0V11M14 11V6a1.5 1.5 0 013 0v7c0 4.5-2.5 7.5-6 7.5-2.6 0-4-1.4-5.4-3.8L3.8 13a1.5 1.5 0 012.6-1.5L8 14"/></svg>',
   undo: '<svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 010 11H11"/></svg>',
   redo: '<svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 000 11H13"/></svg>',
@@ -766,6 +859,7 @@ function setTool(t) {
   if (G) return;
   S.prefs.tool = t;
   if (t !== 'lasso') clearSel();
+  if (t !== 'text' && getSelection().anchorNode?.parentElement?.closest('.textLayer')) getSelection().removeAllRanges();
   document.body.dataset.tool = t;
   S.pages.forEach(clearLive);
   renderToolbar();
@@ -783,9 +877,10 @@ function renderToolbar() {
   h += btn('tool:highlighter', I.highlighter, 'Highlighter (H)', t === 'highlighter');
   h += btn('tool:eraser', I.eraser, 'Eraser (E) – pen eraser end also works', t === 'eraser');
   h += btn('tool:lasso', I.lasso, 'Lasso select (L): drag to move, Delete to remove, swatch to recolor', t === 'lasso');
+  h += btn('tool:text', I.text, 'Text select (T)', t === 'text');
   h += btn('tool:hand', I.hand, 'Pan (V, or hold Space)', t === 'hand');
   h += sep;
-  const pal = t === 'highlighter' ? 'highlighter' : t === 'pen' || t === 'lasso' ? 'pen' : null;
+  const pal = t === 'highlighter' || t === 'text' ? 'highlighter' : t === 'pen' || t === 'lasso' ? 'pen' : null;
   if (pal) {
     const cur = S.prefs[pal].color;
     for (const c of PALETTE[pal])
@@ -798,6 +893,7 @@ function renderToolbar() {
   }
   if (t === 'pen' || t === 'highlighter')
     h += `<span class="sep"></span><span class="label" title="Stroke smoothing">Smooth</span><input type="range" id="smooth" min="0" max="1" step="0.05" value="${S.prefs.smooth}" title="Stroke smoothing (0 = raw input)">`;
+  if (t === 'text') h += sep + btn('hlSel', I.highlighter + 'Highlight', 'Highlight the selected text in the highlighter color (Enter)');
   if (t === 'eraser')
     h += btn('eraserMode', S.prefs.eraser.mode === 'partial' ? 'Partial' : 'Whole stroke', 'Eraser mode: whole stroke ↔ partial (cuts strokes)');
   h += sep;
@@ -839,6 +935,7 @@ toolbar.addEventListener('click', (e) => {
   else if (a === 'toc') tocEl.hidden ? openToc() : closeToc();
   else if (a === 'find') findEl.hidden ? openFind() : closeFind();
   else if (a === 'color') pickColor(arg);
+  else if (a === 'hlSel') highlightSelection();
   else if (a === 'undo') undo();
   else if (a === 'redo') redo();
   else if (a === 'zoomIn') setZoom(S.zoom * 1.2);
@@ -875,7 +972,7 @@ function pickColor(c, fromInput = false) {
     replaceSelected((s) => clone(s, { c }));
     if (hl) return;
   }
-  const pal = t === 'highlighter' ? 'highlighter' : 'pen';
+  const pal = t === 'highlighter' || t === 'text' ? 'highlighter' : 'pen';
   S.prefs[pal].color = c;
   savePrefs();
   if (!fromInput) renderToolbar();
@@ -1287,7 +1384,7 @@ async function init(msg) {
   if (msg.prefs) {
     const p = msg.prefs, d = DEFAULT_PREFS;
     S.prefs = {
-      tool: p.tool in { pen: 1, highlighter: 1, eraser: 1, lasso: 1, hand: 1 } ? p.tool : d.tool,
+      tool: p.tool in { pen: 1, highlighter: 1, eraser: 1, lasso: 1, text: 1, hand: 1 } ? p.tool : d.tool,
       pen: { ...d.pen, ...p.pen },
       highlighter: { ...d.highlighter, ...p.highlighter },
       eraser: { ...d.eraser, ...p.eraser },

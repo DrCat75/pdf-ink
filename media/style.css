@@ -34,11 +34,28 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--canvas
 .page { position: relative; background: #fff; box-shadow: 0 1px 6px rgba(0,0,0,.45); flex: none; touch-action: none; }
 .page canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .page canvas.hl { mix-blend-mode: multiply; }
+/* pdf.js text layer (the needed parts of pdfjs-dist/web/pdf_viewer.css). Only takes pointer events with the text tool.
+   It's the only selectable part of the page (body is user-select: none). */
+.page .textLayer { position: absolute; inset: 0; overflow: clip; line-height: 1; text-align: initial; pointer-events: none;
+  user-select: text; -webkit-user-select: text;
+  --min-font-size: 1; --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size)); --min-font-size-inv: calc(1 / var(--min-font-size)); }
+body[data-tool=text] .page .textLayer { pointer-events: auto; }
+.textLayer :is(span, br) { position: absolute; white-space: pre; transform-origin: 0 0; color: transparent; cursor: text; }
+.textLayer > :not(.markedContent), .textLayer .markedContent span:not(.markedContent) { z-index: 1;
+  font-size: calc(var(--text-scale-factor) * var(--font-height, 0px));
+  transform: rotate(var(--rotate, 0deg)) scaleX(var(--scale-x, 1)) scale(var(--min-font-size-inv)); }
+.textLayer .markedContent { display: contents; }
+.textLayer ::selection { background: rgba(0,120,215,.3); color: transparent; }
+.textLayer br::selection { background: transparent; }
+/* While dragging, this covers the empty space between spans, so the selection doesn't jump to the top of the page */
+.textLayer .endOfContent { display: block; position: absolute; inset: 100% 0 0; z-index: 0; cursor: text; user-select: none; -webkit-user-select: none; }
+.textLayer.selecting .endOfContent { top: 0; }
 .page .sel { position: absolute; border: 1.5px dashed var(--active); background: rgba(14,99,156,.06); pointer-events: none; box-sizing: border-box; }
 
 /* cursors (--dot, --cross: PNGs set by webview.js); the eraser draws its own circle */
 body[data-tool=pen] #viewer, body[data-tool=highlighter] #viewer { cursor: var(--dot, crosshair); }
 body[data-tool=lasso] #viewer { cursor: var(--cross, crosshair); }
+body[data-tool=text] #viewer { cursor: text; }
 body[data-tool=eraser] .page { cursor: none; }
 body[data-gesture=pen], body[data-gesture=pen] *, body[data-gesture=highlighter], body[data-gesture=highlighter] * { cursor: var(--dot, crosshair) !important; }
 body[data-gesture=lasso], body[data-gesture=lasso] * { cursor: var(--cross, crosshair) !important; }
